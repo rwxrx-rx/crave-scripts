@@ -1,482 +1,442 @@
 #!/bin/bash
 
 #
-# Script For Building Android Custom ROM (Camellia - Poco M3 Pro 5G / Redmi Note 10 5G)
+# Script For Building crDroid 16.0 (Android 16) - Poco M3 Pro 5G (camellia)
 #
-# Copyright (C) 2026 pure-soul-kk <krishnakripa34567@gmail.com>
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
-
-red='\033[0;31m'
-green='\033[0;32m'
-yellow='\033[0;33m'
-blue='\033[0;34m'
-clear='\033[0m'
-
 set -o pipefail
-set -o allexport
+
+# ================= CONFIGS & ENV =================
+# Jika menggunakan file .env, pastikan file tersebut ada di folder yang sama
 [ -f .env ] && source .env
-set +o allexport
 
-# IST override for all date calls in this script
-export TZ="Asia/Kolkata"
-
-### ================= CONFIG =================
-
-ROM_NAME="crDroid"
+# Variabel Utama Target Build
 DEVICE="camellia"
+ROM_NAME="crDroid"
+ANDROID_VERSION="16.0"
+PROJECT_VERSION="v12.x"
 BUILD_TYPE="userdebug"
-USER="@akbarfatur"
+BUILD_FLAVOUR="GAPPS"
 
-COMMON_IMAGES=("boot.img" "recovery.img")
+# Jika tidak pakai .env, kamu bisa isi langsung di sini:
+BOT_TOKEN="${BOT_TOKEN:-YOUR_TELEGRAM_BOT_TOKEN}"
+CHAT_ID="${CHAT_ID:-YOUR_TELEGRAM_CHAT_ID}"
+UPLOAD_CHAT_ID="${UPLOAD_CHAT_ID:-$CHAT_ID}"
+PIXELDRAIN="${PIXELDRAIN:-YOUR_PIXELDRAIN_API_KEY}"
+
+# Directories & Time
 OUT_DIR="out/target/product/${DEVICE}"
-LOG="build.log"
-OTA_JSON_FILE="${OUT_DIR}/${DEVICE}.json"
-ROM_ZIP="${OUT_DIR}/*.zip"
+START_TIME=$(date +%s)
+BUILD_LOG="build.log"
+ERROR_LOG="out/error.log"
 
-### ============================================== ###
+# ================= TIMEZONE =================
+echo "🕒 Switching system timezone to Asia/Jakarta (WIB)"
+sudo rm -f /etc/localtime
+sudo ln -s /usr/share/zoneinfo/Asia/Jakarta /etc/localtime
+echo "🕒 Current system time: $(date)"
 
-### ============ MAIN FUNCTIONS ================== ###
+# ================= JQ DEPENDENCY =================
+if ! command -v jq &> /dev/null; then
+    mkdir -p ~/bin
+    curl -L -o ~/bin/jq https://github.com/jqlang/jq/releases/download/jq-1.7/jq-linux64
+    chmod +x ~/bin/jq
+    export PATH=$HOME/bin:$PATH
+fi
 
-function clean() {
-  rm -rf .repo/local_manifests
+# ================= TELEGRAM FUNCTIONS =================
+tg_send() {
+    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        -d chat_id="${CHAT_ID}" \
+        -d parse_mode="Markdown" \
+        -d disable_web_page_preview="true" \
+        -d text="$1" >/dev/null
 }
 
-function sync_sources() {
-  repo init -u https://github.com/crdroidandroid/android.git -b 16.0 --git-lfs --depth=1
-  
-  if [ -d .repo/local_manifests ]; then
-    echo "--> Local manifests present"
-  else
-    git clone https://github.com/rwxrx-rx/local_manifest.git -b main .repo/local_manifests || true
-  fi
-
-  if [ -f /opt/crave/resync.sh ]; then
-    /opt/crave/resync.sh
-  else
-    repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
-  fi
+tg_send_id() {
+    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        -d chat_id="${CHAT_ID}" \
+        -d parse_mode="Markdown" \
+        -d disable_web_page_preview="true" \
+        -d text="$1" | jq -r '.result.message_id'
 }
 
-function setup_env() {
-  export BUILD_USERNAME=rwxrxrx
-  export BUILD_HOSTNAME=crave
+tg_edit() {
+    local MSG_ID="$1"
+    local TEXT="$2"
 
-  . build/envsetup.sh
-  
-  # Pilih target lunch yang sesuai dengan ROM (crdroid / lineage)
-  lunch crdroid_"$DEVICE"-bp4a-"$BUILD_TYPE" || lunch lineage_"$DEVICE"-bp4a-"$BUILD_TYPE"
-  
-  # Hapus cache KERNEL_OBJ agar patch binder/CMA terbaru ter-apply
-  rm -rf "${OUT_DIR}/obj/KERNEL_OBJ"
-  
-  mka installclean
+    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageText" \
+        -d chat_id="${CHAT_ID}" \
+        -d message_id="${MSG_ID}" \
+        -d parse_mode="Markdown" \
+        -d disable_web_page_preview="true" \
+        -d text="$TEXT" >/dev/null
 }
 
-function build_rom() {
-  touch "$LOG"
-  m bacon 2>&1 | tee "$LOG" &
-  BUILD_PID=$!
-
-  wait "$BUILD_PID"
-  return $?
+tg_upload() {
+    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        -d chat_id="${UPLOAD_CHAT_ID}" \
+        -d parse_mode="Markdown" \
+        -d disable_web_page_preview="true" \
+        -d text="$1" >/dev/null
 }
 
-### ===========  HELPER FUNCTIONS ================ ###
+tg_log() {
+    local FILE="$1"
+    local CAPTION="$2"
 
-function format_time() {
-  local SECS=$1
-  local h=$(( SECS / 3600 ))
-  local m=$(( (SECS % 3600) / 60 ))
-  local s=$(( SECS % 60 ))
-
-  if [ "$h" -gt 0 ]; then
-    echo "${h} hr ${m} min ${s} sec"
-  else
-    echo "${m} min ${s} sec"
-  fi
+    curl -s -F "chat_id=${UPLOAD_CHAT_ID}" \
+         -F "document=@${FILE}" \
+         -F "caption=${CAPTION}" \
+         "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" >/dev/null
 }
 
-function tg_post_msg() {
-  [ -z "$BOT_TOKEN" ] && return 0
-  curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-    -d chat_id="$CHAT_ID" \
-    -d parse_mode="Markdown" \
-    -d disable_web_page_preview="true" \
-    -d text="$1" > /dev/null
+# ================= LIVE MONITOR =================
+format_time() {
+    local SECS=$1
+    local h=$(( SECS / 3600 ))
+    local m=$(( (SECS % 3600) / 60 ))
+    local s=$(( SECS % 60 ))
+
+    if [ "$h" -gt 0 ]; then
+        echo "${h}hr ${m}min ${s}s"
+    else
+        echo "${m}min ${s}s"
+    fi
 }
 
-function tg_edit_msg() {
-  [ -z "$BOT_TOKEN" ] && return 0
-  curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageText" \
-    -d chat_id="$CHAT_ID" \
-    -d message_id="$1" \
-    -d parse_mode="Markdown" \
-    -d disable_web_page_preview="true" \
-    -d text="$2" > /dev/null
-}
+get_stats() {
+    read -r _ u1 n1 s1 i1 w1 irq1 sirq1 st1 _ < /proc/stat
+    sleep 1
+    read -r _ u2 n2 s2 i2 w2 irq2 sirq2 st2 _ < /proc/stat
 
-function tg_send_file() {
-  [ -z "$BOT_TOKEN" ] && return 0
-  curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
-    -F chat_id="$CHAT_ID" \
-    -F document=@"$1" \
-    -F caption="$2" > /dev/null
-}
+    idle1=$((i1 + w1))
+    idle2=$((i2 + w2))
+    total1=$((u1 + n1 + s1 + i1 + w1 + irq1 + sirq1 + st1))
+    total2=$((u2 + n2 + s2 + i2 + w2 + irq2 + sirq2 + st2))
 
-function tg_get_msg_id() {
-  [ -z "$BOT_TOKEN" ] && return 0
-  curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-    -d chat_id="$CHAT_ID" \
-    -d parse_mode="Markdown" \
-    -d disable_web_page_preview="true" \
-    -d text="$1" | jq -r '.result.message_id'
-}
+    diff_idle=$((idle2 - idle1))
+    diff_total=$((total2 - total1))
 
-STICKER_ID="CAACAgIAAxkBAAFHPGBp3vv2alKfVBQ4v7AaHPF97GMSKAACGTEAArx_wUuGnBCRzvYJbTsE"
-
-function tg_sticker() {
-  [ -z "$BOT_TOKEN" ] && return 0
-  curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendSticker" \
-    -d sticker="$STICKER_ID" \
-    -d chat_id="$CHAT_ID" > /dev/null
-}
-
-function get_stats() {
-  read -r _ u1 n1 s1 i1 w1 irq1 sirq1 st1 _ < /proc/stat
-  sleep 1
-  read -r _ u2 n2 s2 i2 w2 irq2 sirq2 st2 _ < /proc/stat
-
-  idle1=$((i1 + w1))
-  idle2=$((i2 + w2))
-
-  total1=$((u1 + n1 + s1 + i1 + w1 + irq1 + sirq1 + st1))
-  total2=$((u2 + n2 + s2 + i2 + w2 + irq2 + sirq2 + st2))
-
-  diff_idle=$((idle2 - idle1))
-  diff_total=$((total2 - total1))
-
-  local CPU=0
-  if [ "$diff_total" -gt 0 ]; then
-    CPU=$(( 100 * (diff_total - diff_idle) / diff_total ))
-  fi
-
-  MEM_USED=$(free -m | awk '/Mem:/ {print $3}')
-  MEM_TOTAL=$(free -m | awk '/Mem:/ {print $2}')
-  LOAD=$(cut -d' ' -f1 /proc/loadavg)
-  echo "$CPU|$MEM_USED|$MEM_TOTAL|$LOAD"
-}
-
-function get_progress_info() {
-  local LOG_FILE="$1"
-
-  local PROGRESS_LINE
-  PROGRESS_LINE=$(grep -o "\[ *[0-9]*% *[0-9]*/[0-9]*\]" "$LOG_FILE" 2>/dev/null | tail -n1)
-
-  if [ -n "$PROGRESS_LINE" ]; then
-    local PERCENT
-    PERCENT=$(echo "$PROGRESS_LINE" | grep -o "[0-9]*%" | tr -d '%')
-    local STEPS
-    STEPS=$(echo "$PROGRESS_LINE" | grep -o "[0-9]*/[0-9]*")
-
-    local FILLED=$(( PERCENT / 10 ))
-    local UNFILLED=$(( 10 - FILLED ))
-    local BAR=""
-
-    for ((i=0; i<FILLED; i++)); do BAR="${BAR}▓"; done
-    for ((i=0; i<UNFILLED; i++)); do BAR="${BAR}░"; done
-
-    echo "\`[${BAR}]\` *${PERCENT}%* (\`${STEPS}\`)"
-  else
-    echo "\`[░░░░░░░░░░]\` *0%* (\`Initializing...\`)"
-  fi
-}
-
-GOFILE_RETRY_MAX=6
-
-function gofile_upload() {
-  local FILE="$1"
-  local FILENAME
-  FILENAME=$(basename "$FILE")
-
-  if [ ! -f "$FILE" ]; then
-    echo "⚠️ Skipped (not found): $FILENAME" >&2
-    return 1
-  fi
-
-  for SERVER in $(printf "%s\n" "${GOFILE_SERVERS[@]}" | shuf); do
-    local ATTEMPT=0
-    while [ "$ATTEMPT" -lt "$GOFILE_RETRY_MAX" ]; do
-      ATTEMPT=$(( ATTEMPT + 1 ))
-      echo "Trying server $SERVER (attempt $ATTEMPT)..." >&2
-
-      RESPONSE=$(curl -4 --http1.1 -sf \
-        -F "file=@${FILE}" \
-        "https://${SERVER}.gofile.io/contents/uploadFile")
-
-      LINK=$(echo "$RESPONSE" | jq -r '.data.downloadPage // empty')
-
-      if [ -n "$LINK" ]; then
-        echo "$LINK"
-        return 0
-      fi
-
-      echo "Server $SERVER attempt $ATTEMPT failed" >&2
-      sleep 2
-    done
-  done
-
-  echo "❌ All GoFile servers/retries exhausted for: $FILENAME" >&2
-  return 1
-}
-
-function tg_send_with_button() {
-  local TEXT="$1"
-  [ -z "$BOT_TOKEN" ] && return 0
-
-  curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-    -d chat_id="$CHAT_ID" \
-    -d parse_mode="Markdown" \
-    -d disable_web_page_preview="true" \
-    -d text="$TEXT" \
-    -d reply_markup='{
-      "inline_keyboard": [[
-        {"text": "🔄 Refresh Info", "callback_data": "refresh"}
-      ]]
-    }' | jq -r '.result.message_id'
-}
-
-function tg_edit_with_button() {
-  local MSG_ID="$1"
-  local TEXT="$2"
-  [ -z "$BOT_TOKEN" ] && return 0
-
-  curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageText" \
-    -d chat_id="$CHAT_ID" \
-    -d message_id="$MSG_ID" \
-    -d parse_mode="Markdown" \
-    -d disable_web_page_preview="true" \
-    -d text="$TEXT" \
-    -d reply_markup='{
-      "inline_keyboard": [[
-        {"text": "🔄 Refresh Info", "callback_data": "refresh"}
-      ]]
-    }' > /dev/null
-}
-
-function listen_refresh() {
-  [ -z "$BOT_TOKEN" ] && return 0
-  local OFFSET=0
-
-  while true; do
-    UPDATES=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getUpdates?offset=${OFFSET}")
-    COUNT=$(echo "$UPDATES" | jq '.result | length 2>/dev/null' || echo 0)
-
-    if [ "$COUNT" -gt 0 ]; then
-      for ((i=0; i<COUNT; i++)); do
-        UPDATE=$(echo "$UPDATES" | jq -c ".result[$i]")
-
-        UPDATE_ID=$(echo "$UPDATE" | jq '.update_id')
-        OFFSET=$((UPDATE_ID + 1))
-
-        CALLBACK=$(echo "$UPDATE" | jq -r '.callback_query.data // empty')
-        MSG_ID=$(echo "$UPDATE" | jq -r '.callback_query.message.message_id // empty')
-
-        if [ "$CALLBACK" = "refresh" ]; then
-          CALLBACK_ID=$(echo "$UPDATE" | jq -r '.callback_query.id // empty')
-
-          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery" \
-               -d callback_query_id="$CALLBACK_ID" > /dev/null
-
-          STATS=$(get_stats)
-          CPU=$(echo "$STATS" | cut -d'|' -f1)
-          MEM_USED=$(echo "$STATS" | cut -d'|' -f2)
-          MEM_TOTAL=$(echo "$STATS" | cut -d'|' -f3)
-          LOAD=$(echo "$STATS" | cut -d'|' -f4)
-
-          ELAPSED=$(( $(date +%s) - BUILD_START ))
-          PROGRESS_BAR=$(get_progress_info "$LOG")
-          CONSOLE=$(grep -v '^\s*$' "$LOG" 2>/dev/null | tail -n1 | cut -c1-110)
-          NOW_LOCAL=$(date +"%H:%M:%S")
-
-          tg_edit_with_button "$MSG_ID" "
-⚙️ *Building ${ROM_NAME}*
-
-📱 Device: \`${DEVICE}\`
-🏙️ *Build Type*: \`${BUILD_TYPE}\`
-
-*Server Stats*
-💻 CPU: \`${CPU}%\`
-💾 RAM: \`${MEM_USED}MB / ${MEM_TOTAL}MB\`
-⚡ Load: \`${LOAD}\`
-
-🕛 Elapsed: $(format_time "$ELAPSED")
-🔥 Status: Compiling...
-📟 Console: \`${CONSOLE}\`
-
-📊 Progress: ${PROGRESS_BAR}
-
-🔄 Last Refreshed: \`${NOW_LOCAL}\`"
-        fi
-      done
+    local CPU=0
+    if [ "$diff_total" -gt 0 ]; then
+        CPU=$(( 100 * (diff_total - diff_idle) / diff_total ))
     fi
 
-    sleep 2
-  done
+    MEM_USED=$(free -m | awk '/Mem:/ {printf "%.1f", $3/1024}')
+    MEM_TOTAL=$(free -m | awk '/Mem:/ {printf "%.1f", $2/1024}')
+    LOAD=$(cut -d' ' -f1 /proc/loadavg)
+    echo "$CPU|$MEM_USED|$MEM_TOTAL|$LOAD"
 }
 
-### =============== MAIN =====================
+tg_send_with_button() {
+    local TEXT="$1"
 
-clean
-sync_sources
-setup_env
+    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        -d chat_id="${CHAT_ID}" \
+        -d parse_mode="Markdown" \
+        -d disable_web_page_preview="true" \
+        -d text="$TEXT" \
+        -d reply_markup='{
+          "inline_keyboard": [[
+            {"text": "🔄 Refresh Info", "callback_data": "refresh"}
+          ]]
+        }' | jq -r '.result.message_id'
+}
 
-### =============== START MSG ================
-BUILD_START=$(date +%s)
-NOW=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-tg_sticker
+tg_edit_with_button() {
+    local MSG_ID="$1"
+    local TEXT="$2"
 
-tg_post_msg "
-🤖 *${ROM_NAME}* Build Triggered
+    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/editMessageText" \
+        -d chat_id="${CHAT_ID}" \
+        -d message_id="${MSG_ID}" \
+        -d parse_mode="Markdown" \
+        -d disable_web_page_preview="true" \
+        -d text="$TEXT" \
+        -d reply_markup='{
+          "inline_keyboard": [[
+            {"text": "🔄 Refresh Info", "callback_data": "refresh"}
+          ]]
+        }' > /dev/null
+}
 
-📱 *Device*: \`${DEVICE}\` (Poco M3 Pro 5G / Redmi Note 10 5G)
-🏙️ *Build Type*: \`${BUILD_TYPE}\`
-⌛ *Time*: \`${NOW}\`"
+listen_refresh() {
+    local LABEL="$1"
+    local MSG_ID="$2"
+    local PHASE_START="$3"
+    local OFFSET=0
 
-PROGRESS_MSG_ID=$(tg_send_with_button "🚀 Initializing build...
-Tap 🔄 Refresh Info to refresh the stats!")
+    while true; do
+        UPDATES=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getUpdates?offset=${OFFSET}")
+        COUNT=$(echo "$UPDATES" | jq '.result | length')
 
-listen_refresh &
+        if [ "$COUNT" -gt 0 ]; then
+            for ((i=0; i<COUNT; i++)); do
+                UPDATE=$(echo "$UPDATES" | jq -c ".result[$i]")
+                UPDATE_ID=$(echo "$UPDATE" | jq '.update_id')
+                OFFSET=$((UPDATE_ID + 1))
+
+                CALLBACK=$(echo "$UPDATE" | jq -r '.callback_query.data // empty')
+                MSG_ID=$(echo "$UPDATE" | jq -r '.callback_query.message.message_id // empty')
+
+                if [ "$CALLBACK" = "refresh" ]; then
+                    CALLBACK_ID=$(echo "$UPDATE" | jq -r '.callback_query.id // empty')
+
+                    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery" \
+                         -d callback_query_id="$CALLBACK_ID" > /dev/null
+
+                    STATS=$(get_stats)
+                    CPU=$(echo "$STATS" | cut -d'|' -f1)
+                    MEM_USED=$(echo "$STATS" | cut -d'|' -f2)
+                    MEM_TOTAL=$(echo "$STATS" | cut -d'|' -f3)
+                    LOAD=$(echo "$STATS" | cut -d'|' -f4)
+
+                    ELAPSED=$(( $(date +%s) - PHASE_START ))
+                    CONSOLE=$(grep -v '^\s*$' "$BUILD_LOG" 2>/dev/null | tail -n1 | cut -c1-110)
+                    NOW_LOCAL=$(date +"%I:%M %p")
+
+                    tg_edit_with_button "$MSG_ID" "📢 Building *${ROM_NAME} ${ANDROID_VERSION}* for *${DEVICE}*
+🧪 Build Type: *${BUILD_TYPE}*
+
+*Server Stats*
+📊 CPU: ${CPU}%
+🌡️ Load: ${LOAD}
+📈 RAM: ${MEM_USED} GB / ${MEM_TOTAL} GB
+
+⏳ Elapsed: $(format_time "$ELAPSED")
+⚡ Status: Compiling...
+📟 Console: \`${CONSOLE}\`
+
+🔄 Last Refreshed: ${NOW_LOCAL}"
+                fi
+            done
+        fi
+
+        sleep 2
+    done
+}
+
+# ================= UPLOADERS =================
+pixeldrain_upload() {
+    local FILE="$1"
+
+    if [ -f "$FILE" ]; then
+        RESPONSE=$(curl -s -u ":$PIXELDRAIN" -F "file=@$FILE" https://pixeldrain.com/api/file)
+        FILE_ID=$(echo "$RESPONSE" | jq -r '.id')
+
+        if [[ "$FILE_ID" != "null" && -n "$FILE_ID" ]]; then
+            echo "https://pixeldrain.com/u/$FILE_ID"
+            return
+        fi
+    fi
+
+    return 1
+}
+
+gofile_upload() {
+    local FILE="$1"
+
+    RESP=$(curl -s -F "file=@${FILE}" "https://upload.gofile.io/uploadfile")
+    LINK=$(echo "$RESP" | jq -r '.data.downloadPage // empty')
+
+    if [ -n "$LINK" ]; then
+        echo "$LINK"
+        return 0
+    fi
+
+    return 1
+}
+
+# ================= ON FAIL =================
+on_fail() {
+    tg_edit "$STATUS_MSG_ID" "💥 *Build Failed!*
+📜 Check build logs"
+
+    [ -f "$ERROR_LOG" ] && tg_log "$ERROR_LOG" "${DEVICE} ⋄ Error Log"
+
+    exit 1
+}
+
+# ================= MAIN WORKFLOW =================
+tg_send "┌───────────────────┐
+🤖 *Buildbot* initialized for
+🛸 *${ROM_NAME} ${ANDROID_VERSION}*
+└───────────────────┘
+📱 Device: *${DEVICE}*
+🧪 Type: *${BUILD_TYPE}*
+🌏 _$(date +"%d %b %Y %I:%M %p WIB")_"
+
+echo ">>>> [STEP 1] Cleaning old manifests"
+rm -rf .repo/local_manifests
+
+echo ">>>> [STEP 2] Repo Init crDroid 16.0"
+repo init -u https://github.com/crdroidandroid/android.git -b 16.0 --git-lfs --depth=1
+
+echo ">>>> [STEP 3] Cloning Local Manifests"
+git clone -b main https://github.com/iamzeus14/Builder-script .repo/local_manifests
+
+echo ">>>> [STEP 4] Repo Sync"
+SYNC_START=$(date +%s)
+
+if [ -f /opt/crave/resync.sh ]; then
+    /opt/crave/resync.sh
+elif [ -f /usr/bin/resync ]; then
+    /usr/bin/resync
+else
+    repo sync -c --force-sync --no-tags --no-clone-bundle -j$(nproc --all)
+fi
+
+SYNC_END=$(date +%s)
+SYNC_DIFF=$((SYNC_END - SYNC_START))
+
+if [ $SYNC_DIFF -ge 3600 ]; then
+    SYNC_TIME="$((SYNC_DIFF/3600))hr $(((SYNC_DIFF%3600)/60))min"
+else
+    SYNC_TIME="$((SYNC_DIFF/60)) min"
+fi
+
+echo ">>>> [STEP 5] Setup Build Environment"
+. build/envsetup.sh
+
+# Lunch Target crDroid 16 untuk camellia (Platform bp4a)
+lunch crdroid_camellia-bp4a-${BUILD_TYPE}
+
+export BUILD_USERNAME=${USER:-akbar}
+export BUILD_HOSTNAME=crave
+
+# Bersihkan out folder secara aman di Crave
+make installclean
+
+touch "$BUILD_LOG"
+
+STATUS_MSG_ID=$(tg_send_with_button "⌛️ RepoSync took ${SYNC_TIME}
+🔄 Tap Refresh Info for live stats!")
+
+# Jalankan listener live monitor di background
+listen_refresh "Building ${DEVICE}" "$STATUS_MSG_ID" "$START_TIME" &
 LISTENER_PID=$!
 
-### =============== BUILD ====================
-build_rom
-STATUS=$?
+# ================= BUILD RUN =================
+echo ">>>> [STEP 6] Compiling ROM"
+m bacon 2>&1 | tee "$BUILD_LOG"
+BUILD_STATUS=${PIPESTATUS[0]}
 
+# Hentikan listener monitor setelah build selesai
 kill "$LISTENER_PID" 2>/dev/null
 wait "$LISTENER_PID" 2>/dev/null
 
-BUILD_END=$(date +%s)
-TIME=$(( BUILD_END - BUILD_START ))
-TIME_FMT=$(format_time "$TIME")
+if [ "$BUILD_STATUS" -ne 0 ]; then
+    on_fail
+fi
 
-### =============== RESULT ====================
+if grep -q -E "ninja failed|failed to build some targets" "$BUILD_LOG"; then
+    on_fail
+fi
 
-if [ "$STATUS" -eq 0 ]; then
+# ================= SUCCESS & UPLOAD =================
+END_TIME=$(date +%s)
+DUR=$((END_TIME - START_TIME))
 
-  mapfile -t GOFILE_SERVERS < <(curl -s "https://api.gofile.io/servers" | jq -r '.data.servers[].name 2>/dev/null')
+if [ $DUR -ge 3600 ]; then
+    BUILD_TIME="$((DUR/3600))h $(((DUR%3600)/60))min"
+else
+    BUILD_TIME="$((DUR/60)) min"
+fi
 
-  if [ "${#GOFILE_SERVERS[@]}" -eq 0 ]; then
-    tg_post_msg "⚠️ Could not resolve any GoFile server. Uploads skipped."
-  fi
+ROM_ZIP=$(ls -t "${OUT_DIR}"/*.zip 2>/dev/null | head -n 1)
 
-  mapfile -t ROM_ZIPS < <(compgen -G "${OUT_DIR}/*.zip" 2>/dev/null)
-  if [ "${#ROM_ZIPS[@]}" -eq 0 ]; then
-    tg_post_msg "⚠️ Build reported success but no ROM zip found at \`${OUT_DIR}\`. Check the build output."
-    exit 1
-  fi
+if [ -z "$ROM_ZIP" ]; then
+    on_fail
+fi
 
-  tg_edit_msg "$PROGRESS_MSG_ID" "
-⚙️ *Building ${ROM_NAME}*
+BUILD_ID=$(basename "$ROM_ZIP" .zip)
+ROM_SIZE=$(du -h "$ROM_ZIP" | awk '{print $1}')
 
-📱 Device: \`${DEVICE}\`
-🔥 Status: ✅ Success
-🕛 Time: ${TIME_FMT}
-📦 Uploading build..."
+tg_edit "$STATUS_MSG_ID" "┌───────────────────┐
+     🎉 Buildbot finished its job
+└───────────────────┘
+🆔 \`${BUILD_ID}\`
+🧩 Build size: *${ROM_SIZE}*
+⏳ Compilation took *${BUILD_TIME}*
 
-  UPLOAD_MSG=""
-  IMG_MSG=""
-  JSON_MSG=""
+📤 Uploading artifacts..."
 
-  ### ======== UPLOAD ZIP(S) ========
-  for ZIP in "${ROM_ZIPS[@]}"; do
-    [ -f "$ZIP" ] || continue
-    FILENAME=$(basename "$ZIP")
-    LINK=$(gofile_upload "$ZIP")
-    if [ -n "$LINK" ]; then
-      UPLOAD_MSG="${UPLOAD_MSG}📦 [${FILENAME}](${LINK})\n"
-    else
-      UPLOAD_MSG="${UPLOAD_MSG}⚠️ Upload failed: \`${FILENAME}\`\n"
-    fi
-  done
+echo ">>>> [STEP 7] Uploading Artifacts"
 
-  ### ======== UPLOAD IMAGES ========
-  for IMG in "${COMMON_IMAGES[@]}"; do
+UPLOAD_MSG=""
+IMG_MSG=""
+JSON_MSG=""
+
+# Upload ROM Zip
+GO_URL=$(gofile_upload "$ROM_ZIP")
+PD_URL=$(pixeldrain_upload "$ROM_ZIP")
+
+[ -n "$GO_URL" ] && UPLOAD_MSG="${UPLOAD_MSG}[GoFile](${GO_URL})\n"
+[ -n "$PD_URL" ] && UPLOAD_MSG="${UPLOAD_MSG}[PixelDrain](${PD_URL})\n"
+
+# Upload Images (boot, recovery, etc.)
+for IMG in boot.img vendor_boot.img init_boot.img super_empty.img recovery.img; do
     FILEPATH="${OUT_DIR}/${IMG}"
     if [ -f "$FILEPATH" ]; then
-      LINK=$(gofile_upload "$FILEPATH")
-      if [ -n "$LINK" ]; then
-        IMG_MSG="${IMG_MSG} [${IMG}](${LINK})\n"
-      else
-        IMG_MSG="${IMG_MSG}⚠️ Upload failed: \`${IMG}\`\n"
-      fi
+        LINK=$(gofile_upload "$FILEPATH")
+        [ -n "$LINK" ] && IMG_MSG="${IMG_MSG}[${IMG}](${LINK})\n"
     fi
-  done
+done
 
-  ### ======== UPLOAD DEVICE JSON ========
-  if [ -f "$OTA_JSON_FILE" ]; then
-    JSON_LINK=$(gofile_upload "$OTA_JSON_FILE")
-    if [ -n "$JSON_LINK" ]; then
-      JSON_MSG=" [${DEVICE}.json](${JSON_LINK})\n"
-    else
-      JSON_MSG="⚠️ Upload failed: \`${DEVICE}.json\`\n"
+# Upload OTA JSON
+declare -A UPLOADED
+JSON_CANDIDATES=(
+    "${OUT_DIR}/${DEVICE}.json"
+    "${ROM_ZIP}.json"
+)
+
+shopt -s nullglob
+for CAND in "${JSON_CANDIDATES[@]}"; do
+    if [ -f "$CAND" ]; then
+        if [ -z "${UPLOADED[$CAND]:-}" ]; then
+            GO_URL=$(gofile_upload "$CAND")
+            if [ -n "$GO_URL" ]; then
+                JSON_MSG="${JSON_MSG}[${CAND##*/}](${GO_URL})\n"
+                UPLOADED["$CAND"]=1
+            fi
+        fi
     fi
-  fi
+done
+shopt -u nullglob
 
-  ### ======== FINAL UPLOAD MSG ========
-  FINAL_MSG="
-🎉 *${ROM_NAME} | ${DEVICE} — Downloads*
-━━━━━━━━━━━━━━━━━━
+# Send Final Message to Telegram
+FINAL_MESSAGE="
+✦ *${ROM_NAME} ${ANDROID_VERSION} Artifacts*
+────────────────
+📱 Device: *${DEVICE}*
+🆔 \`${BUILD_ID}\`
 
+📦 *ROM*
 $(echo -e "$UPLOAD_MSG")"
 
-  if [ -n "$IMG_MSG" ]; then
-    FINAL_MSG="${FINAL_MSG}
+if [ -n "$IMG_MSG" ]; then
+    FINAL_MESSAGE="${FINAL_MESSAGE}
 
-🔧 *Partition Images*
+🧩 *Images*
 $(echo -e "$IMG_MSG")"
-  fi
-
-  if [ -n "$JSON_MSG" ]; then
-    FINAL_MSG="${FINAL_MSG}
-  
-📋 *Device JSON*
-$(echo -e "$JSON_MSG")"
-  fi
-
-  FINAL_MSG="${FINAL_MSG}
-
-👤 By: \`${USER}\`
-🕛 Build Time: ${TIME_FMT}"
-
-  tg_post_msg "$FINAL_MSG"
-
-else
-
-  tg_edit_msg "$PROGRESS_MSG_ID" "
-⚙️ *Building ${ROM_NAME}*
-
-📱 Device: \`${DEVICE}\`
-🔥 Status: ❌ Failed
-🕛 Time: ${TIME_FMT}"
-
-  if [ -f "out/error.log" ]; then
-    tg_send_file "out/error.log" "📜 Build Error Log — ${DEVICE}"
-  else
-    tail -n 120 "$LOG" > error_tail.log
-    tg_send_file "error_tail.log" "📜 Last 120 lines — ${DEVICE} (no out/error.log found)"
-    rm -f error_tail.log
-  fi
-
 fi
+
+if [ -n "$JSON_MSG" ]; then
+    FINAL_MESSAGE="${FINAL_MESSAGE}
+
+📜 *JSON*
+$(echo -e "$JSON_MSG")"
+fi
+
+tg_upload "$FINAL_MESSAGE"
+
+tg_edit "$STATUS_MSG_ID" "┌───────────────────┐
+     🎉 Buildbot finished its job
+└───────────────────┘
+🆔 \`${BUILD_ID}\`
+🧩 Build size: *${ROM_SIZE}*
+⏳ Compilation took *${BUILD_TIME}*
+
+✅ Artifacts uploaded successfully!"
+
+exit 0

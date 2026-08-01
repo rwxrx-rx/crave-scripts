@@ -273,7 +273,7 @@ echo ">>>> [STEP 2] Repo Init crDroid 16.0"
 repo init -u https://github.com/crdroidandroid/android.git -b 16.0 --git-lfs --depth=1
 
 echo ">>>> [STEP 3] Cloning Local Manifests"
-git clone -b main https://github.com/iamzeus14/Builder-script .repo/local_manifests
+git clone -b main https://github.com/rwxrx-rx/local_manifest .repo/local_manifests
 
 echo ">>>> [STEP 4] Repo Sync"
 SYNC_START=$(date +%s)

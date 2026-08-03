@@ -4,12 +4,10 @@ set -euo pipefail
 
 # ==================== CONFIGURATION ====================
 ROM_MANIFEST_URL="https://github.com/rwxrx-rx/local_manifests.git"
-ROM_MANIFEST_BRANCH="16.0"
+ROM_MANIFEST_BRANCH="main"
 ROM_BRANCH="16.0"
 DEVICE="camellia"
-GITHUB_RELEASE_REPO="rwxrx-rx/roms"
-UPLOAD_GITHUB_RELEASE="${UPLOAD_GITHUB_RELEASE:-0}"
-UPLOAD_GOFILE="${UPLOAD_GOFILE:-1}"
+UPLOAD_PIXELDRAIN="${UPLOAD_PIXELDRAIN:-1}"
 LOG_FILE="build_${DEVICE}_$(date +%Y%m%d_%H%M%S).log"
 # =======================================================
 
@@ -45,21 +43,15 @@ install_jq_if_missing() {
   fi
 }
 
-if [[ "${UPLOAD_GITHUB_RELEASE}" == "1" || "${UPLOAD_GOFILE}" == "1" ]]; then
+if [[ "${UPLOAD_PIXELDRAIN}" == "1" ]]; then
   if ! command -v curl >/dev/null 2>&1; then
-    echo "WARNING: curl is unavailable; post-build uploads will be skipped" >&2
-    UPLOAD_GITHUB_RELEASE=0
-    UPLOAD_GOFILE=0
+    echo "WARNING: curl is unavailable; PixelDrain upload will be skipped" >&2
+    UPLOAD_PIXELDRAIN=0
   elif ! command -v jq >/dev/null 2>&1; then
     if ! install_jq_if_missing; then
-      echo "WARNING: jq could not be installed; post-build uploads will be skipped" >&2
-      UPLOAD_GITHUB_RELEASE=0
-      UPLOAD_GOFILE=0
+      echo "WARNING: jq could not be installed; PixelDrain upload will be skipped" >&2
+      UPLOAD_PIXELDRAIN=0
     fi
-  fi
-  if [[ "${UPLOAD_GITHUB_RELEASE}" == "1" && -z "${GH_TOKEN:-}" ]]; then
-    echo "WARNING: GH_TOKEN is missing; GitHub upload will be skipped" >&2
-    UPLOAD_GITHUB_RELEASE=0
   fi
 fi
 
@@ -122,96 +114,32 @@ shopt -s nullglob
 RELEASE_ASSETS=(out/target/product/${DEVICE}/*.zip)
 shopt -u nullglob
 
-upload_github_release() {
-  local release_tag release_title release_notes release_json release_response
-  local upload_url release_url asset asset_size upload_asset
-
-  echo "==> Creating GitHub release in ${GITHUB_RELEASE_REPO}"
-  release_tag="camellia-$(date -u +%Y.%m.%d-%H%M)"
-  release_title="crDroid ${ROM_BRANCH} for ${DEVICE} — ${release_tag}"
-  release_notes="$(printf 'Automated Crave build for Xiaomi %s.\n\nBuild device: %s\nROM branch: %s\nManifest: %s@%s\nManifest revision: %s\n' \
-    "${DEVICE}" "${DEVICE}" "${ROM_BRANCH}" "${ROM_MANIFEST_URL}" "${ROM_MANIFEST_BRANCH}" \
-    "$(git -C .repo/local_manifests rev-parse HEAD)")"
-  release_json="$(jq -n \
-    --arg tag "${release_tag}" \
-    --arg name "${release_title}" \
-    --arg body "${release_notes}" \
-    '{tag_name:$tag, name:$name, body:$body, draft:false, prerelease:false}')"
-
-  if ! release_response="$(curl --fail-with-body --silent --show-error \
-    -X POST \
-    -H "Accept: application/vnd.github+json" \
-    -H "Authorization: Bearer ${GH_TOKEN}" \
-    -H "X-GitHub-Api-Version: 2022-11-28" \
-    "https://api.github.com/repos/${GITHUB_RELEASE_REPO}/releases" \
-    -d "${release_json}")"; then
-    echo "WARNING: GitHub release creation failed; continuing" >&2
-    return 1
-  fi
-
-  upload_url="$(jq -r '.upload_url // empty' <<<"${release_response}" | sed 's/{?name,label}//')"
-  release_url="$(jq -r '.html_url // empty' <<<"${release_response}")"
-  if [[ -z "${upload_url}" ]]; then
-    echo "WARNING: GitHub returned no upload URL; continuing" >&2
-    return 1
-  fi
+upload_pixeldrain() {
+  local asset upload_asset upload_response file_id success
 
   for asset in "${RELEASE_ASSETS[@]}"; do
-    asset_size="$(stat -c '%s' "${asset}")"
-    if [[ "${asset_size}" -ge 2147483648 ]]; then
-      echo "WARNING: GitHub skipped asset at or above 2 GiB: ${asset}" >&2
-      continue
-    fi
+    # Generate SHA256 checksum
     sha256sum "${asset}" > "${asset}.sha256"
+
     for upload_asset in "${asset}" "${asset}.sha256"; do
-      echo "==> Uploading to GitHub: $(basename "${upload_asset}")"
-      if ! curl --fail-with-body --silent --show-error \
-        -X POST \
-        -H "Accept: application/vnd.github+json" \
-        -H "Authorization: Bearer ${GH_TOKEN}" \
-        -H "X-GitHub-Api-Version: 2022-11-28" \
-        -H "Content-Type: application/octet-stream" \
-        --data-binary "@${upload_asset}" \
-        "${upload_url}?name=$(basename "${upload_asset}")" >/dev/null; then
-        echo "WARNING: GitHub upload failed for $(basename "${upload_asset}"); continuing" >&2
-      fi
-    done
-  done
-  echo "GitHub release URL: ${release_url}"
-}
-
-upload_gofile() {
-  local server_response server asset upload_response status download_page upload_asset
-
-  echo "==> Finding a Gofile upload server"
-  if ! server_response="$(curl --fail-with-body --silent --show-error \
-    --connect-timeout 15 --retry 2 https://api.gofile.io/servers)"; then
-    echo "WARNING: Gofile server lookup failed; continuing" >&2
-    return 1
-  fi
-  server="$(jq -r '.data.servers[0].name // empty' <<<"${server_response}")"
-  if [[ -z "${server}" ]]; then
-    echo "WARNING: Gofile returned no upload server; continuing" >&2
-    return 1
-  fi
-
-  for asset in "${RELEASE_ASSETS[@]}"; do
-    sha256sum "${asset}" > "${asset}.sha256"
-    for upload_asset in "${asset}" "${asset}.sha256"; do
-      echo "==> Uploading to Gofile: $(basename "${upload_asset}")"
-      if ! upload_response="$(curl --fail-with-body --silent --show-error \
-        --connect-timeout 30 --retry 2 --max-time 3600 \
+      echo "==> Uploading to PixelDrain: $(basename "${upload_asset}")"
+      
+      # Anonymous upload via PixelDrain API v1
+      if upload_response="$(curl --fail-with-body --silent --show-error \
+        --connect-timeout 30 --retry 3 --max-time 3600 \
         -F "file=@${upload_asset}" \
-        "https://${server}.gofile.io/contents/uploadfile")"; then
-        echo "WARNING: Gofile upload failed for $(basename "${upload_asset}"); continuing" >&2
-        continue
-      fi
-      status="$(jq -r '.status // empty' <<<"${upload_response}")"
-      download_page="$(jq -r '.data.downloadPage // empty' <<<"${upload_response}")"
-      if [[ "${status}" == "ok" && -n "${download_page}" ]]; then
-        echo "Gofile link for $(basename "${upload_asset}"): ${download_page}"
+        "https://pixeldrain.com/api/file")"; then
+        
+        success="$(jq -r '.success // false' <<<"${upload_response}")"
+        file_id="$(jq -r '.id // empty' <<<"${upload_response}")"
+
+        if [[ "${success}" == "true" && -n "${file_id}" ]]; then
+          echo "PixelDrain link for $(basename "${upload_asset}"): https://pixeldrain.com/u/${file_id}"
+        else
+          echo "WARNING: PixelDrain upload returned an error for $(basename "${upload_asset}"); continuing" >&2
+        fi
       else
-        echo "WARNING: Gofile returned an unsuccessful response for $(basename "${upload_asset}"); continuing" >&2
+        echo "WARNING: PixelDrain upload failed for $(basename "${upload_asset}"); continuing" >&2
       fi
     done
   done
@@ -220,14 +148,10 @@ upload_gofile() {
 if [[ "${#RELEASE_ASSETS[@]}" -eq 0 ]]; then
   echo "WARNING: no ROM ZIP found; skipping post-build uploads" >&2
 else
-  if [[ "${UPLOAD_GITHUB_RELEASE}" == "1" ]]; then
-    upload_github_release || true
-  fi
-  if [[ "${UPLOAD_GOFILE}" == "1" ]]; then
-    upload_gofile || true
+  if [[ "${UPLOAD_PIXELDRAIN}" == "1" ]]; then
+    upload_pixeldrain || true
   fi
 fi
 
 echo "==> Build completed"
 echo "Artifacts: out/target/product/${DEVICE}/"
-                    

@@ -1,29 +1,32 @@
-# Rom repo init
+#!/bin/bash
 
+# 1. Repo init
+echo "-----------------------------"
+echo "Starting Repo Init"
+echo "-----------------------------"
 repo init -u https://github.com/crdroidandroid/android.git -b 16.0 --git-lfs --no-clone-bundle
 
-echo "-----------------------------"
-echo "Repo init cloned successfully"
-echo "-----------------------------"
-
-# sycning
-
+# 2. Syncing Source (Cukup 1x)
 echo "-----------------------"
 echo "Starting to sync source"
 echo "-----------------------"
-
-/opt/crave/resync.sh
-
-/opt/crave/resync.sh
-
 /opt/crave/resync.sh
 
 echo "------------------------"
-echo "Source syncing comppeted"
+echo "Source syncing completed"
 echo "------------------------"
 
-
-# Dt
+# 3. Clean & Clone Trees (Pembersihan agar tidak error 'directory already exists')
+echo "---------------------"
+echo "Cloning Device Trees"
+echo "---------------------"
+rm -rf device/xiaomi/camellia
+rm -rf vendor/xiaomi/camellia
+rm -rf device/xiaomi/camellia-kernel
+rm -rf vendor/mediatek/ims
+rm -rf device/mediatek/sepolicy_vndr
+rm -rf hardware/mediatek
+rm -rf hardware/xiaomi
 
 git clone https://github.com/aLpHa-Git-69/device_xiaomi_camellia.git -b lineage-23.2 device/xiaomi/camellia
 git clone https://github.com/aLpHa-Git-69/vendor_xiaomi_camellia.git vendor/xiaomi/camellia
@@ -34,29 +37,17 @@ git clone https://github.com/LineageOS/android_hardware_mediatek.git hardware/me
 git clone https://github.com/LineageOS/android_hardware_xiaomi.git hardware/xiaomi
 
 echo "---------------------"
-echo "Tress clone completed"
+echo "Trees clone completed"
 echo "---------------------"
 
-# build env
-
-. b*/e*
-
+# 4. Setup Environment
 echo "---------------------------"
-echo "Build/envsetup.sh completed"
+echo "Setting up Build Environment"
 echo "---------------------------"
+source build/envsetup.sh
 
-# signing script
-
-curl -sSf https://raw.githubusercontent.com/Trijal08/crDroid-build-signed-script-auto/main/create-signed-env.sh | bash
-
-echo "----------------------------"
-echo "Rom signed with private keys"
-echo "----------------------------"
-
-# lunch
-
-brunch lavender
-
+# 5. Build ROM (Sesuai Device: camellia)
 echo "----------"
-echo "Brunch done"
+echo "Starting Brunch Camellia"
 echo "----------"
+brunch camellia

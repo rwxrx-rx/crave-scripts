@@ -1,6 +1,6 @@
 # rom repo init
 
-repo init -u https://github.com/PixelOS-AOSP/android_manifest.git -b sixteen --git-lfs
+repo init -u https://github.com/PixelOS-AOSP/android_manifest.git -b sixteen-qpr2 --git-lfs
 
 echo "-----------------------------"
 echo "Repo init cloned successfully"
@@ -46,13 +46,13 @@ echo "---------------------------"
 
 # Lunch & Build
 
-lunch pixelos_camellia-ap3a-userdebug || lunch pixelos_camellia-userdebug
+breakfast camellia
 
 echo "----------------------------"
 echo "Starting PixelOS Compilation"
 echo "----------------------------"
 
-m bacon
+m pixelos
 
 echo "----------"
 echo "Done"

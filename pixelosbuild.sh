@@ -21,7 +21,6 @@ echo "-----------------------------"
 echo "Cloning Device & Vendor Trees"
 echo "-----------------------------"
 
-# Hapus direktori lama jika ada untuk mencegah error "already exists"
 rm -rf device/xiaomi/camellia
 rm -rf vendor/xiaomi/camellia
 rm -rf device/xiaomi/camellia-kernel
@@ -30,7 +29,6 @@ rm -rf device/mediatek/sepolicy_vndr
 rm -rf hardware/mediatek
 rm -rf hardware/xiaomi
 
-# Clone dengan --depth=1 agar proses berjalan lebih cepat
 git clone --depth=1 https://github.com/aLpHa-Git-69/device_xiaomi_camellia.git -b lineage-23.2 device/xiaomi/camellia
 git clone --depth=1 https://github.com/aLpHa-Git-69/vendor_xiaomi_camellia.git vendor/xiaomi/camellia
 git clone --depth=1 https://github.com/dm700-devs/device_xiaomi_camellia-kernel.git device/xiaomi/camellia-kernel
@@ -38,6 +36,16 @@ git clone --depth=1 https://github.com/techyminati/android_vendor_mediatek_ims.g
 git clone --depth=1 https://github.com/LineageOS/android_device_mediatek_sepolicy_vndr.git device/mediatek/sepolicy_vndr
 git clone --depth=1 https://github.com/LineageOS/android_hardware_mediatek.git hardware/mediatek
 git clone --depth=1 https://github.com/LineageOS/android_hardware_xiaomi.git hardware/xiaomi
+
+# --- Adapting Lineage Tree to PixelOS ---
+echo "---------------------------------"
+echo "Adapting Device Tree for PixelOS"
+echo "---------------------------------"
+if [ -f device/xiaomi/camellia/lineage_camellia.mk ]; then
+  mv device/xiaomi/camellia/lineage_camellia.mk device/xiaomi/camellia/pixelos_camellia.mk
+  sed -i 's/lineage_camellia/pixelos_camellia/g' device/xiaomi/camellia/AndroidProducts.mk
+  sed -i 's/lineage_camellia/pixelos_camellia/g' device/xiaomi/camellia/pixelos_camellia.mk
+fi
 
 echo "---------------------"
 echo "Trees clone completed"
@@ -54,10 +62,9 @@ echo "----------------------------"
 echo "Starting PixelOS Compilation"
 echo "----------------------------"
 
-# Menggunakan lunch target khas PixelOS/AOSP (bukan breakfast)
-lunch pixelos_camellia-userdebug
+# Format lunch baru: <product>-<release>-<build_variant>
+lunch pixelos_camellia-ap3a-userdebug || lunch pixelos_camellia-trunk_staging-userdebug
 
-# Target kompilasi standar untuk menghasilkan zip flashable
 m bacon
 
 echo "----------"

@@ -41,15 +41,18 @@ echo "---------------------------------"
 echo "Adapting Device Tree for PixelOS"
 echo "---------------------------------"
 if [ -f device/xiaomi/camellia/lineage_camellia.mk ]; then
+    # 1. Rename file makefile utama
     mv device/xiaomi/camellia/lineage_camellia.mk device/xiaomi/camellia/pixelos_camellia.mk
     
-    # Update daftar produk di AndroidProducts.mk
+    # 2. Update AndroidProducts.mk
     sed -i 's/lineage_camellia/pixelos_camellia/g' device/xiaomi/camellia/AndroidProducts.mk
     
-    # Update PRODUCT_NAME & konfigurasi bawaan di pixelos_camellia.mk
-    sed -i 's/lineage_camellia/pixelos_camellia/g' device/xiaomi/camellia/pixelos_camellia.mk
-    sed -i 's/vendor\/lineage/vendor\/pixelos/g' device/xiaomi/camellia/pixelos_camellia.mk
-    sed -i 's/lineage_/pixelos_/g' device/xiaomi/camellia/pixelos_camellia.mk
+    # 3. Ganti PRODUCT_NAME
+    sed -i 's/PRODUCT_NAME := lineage_camellia/PRODUCT_NAME := pixelos_camellia/g' device/xiaomi/camellia/pixelos_camellia.mk
+    
+    # 4. Ganti Inherit Vendor Config (PixelOS AOSP menggunakan vendor/pixel/config/...)
+    sed -i 's|vendor/lineage/config/common_full_phone.mk|vendor/pixel/config/common_full_phone.mk|g' device/xiaomi/camellia/pixelos_camellia.mk
+    sed -i 's|vendor/lineage/config/common.mk|vendor/pixel/config/common.mk|g' device/xiaomi/camellia/pixelos_camellia.mk
 fi
 
 echo "---------------------"
@@ -67,8 +70,8 @@ echo "----------------------------"
 echo "Starting PixelOS Compilation"
 echo "----------------------------"
 
-# Menjalankan lunch khusus PixelOS Android 16 / Trunk Staging
-lunch pixelos_camellia-ap3a-userdebug || lunch pixelos_camellia-trunk_staging-userdebug
+# Android 16 / PixelOS Sixteen menggunakan penamaan lunch modern:
+lunch pixelos_camellia-ap3a-userdebug || lunch pixelos_camellia-userdebug
 
 m bacon -j$(nproc)
 

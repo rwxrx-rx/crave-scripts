@@ -20,7 +20,6 @@ echo "------------------------"
 echo "-----------------------------"
 echo "Cloning Device & Vendor Trees"
 echo "-----------------------------"
-
 rm -rf device/xiaomi/camellia
 rm -rf vendor/xiaomi/camellia
 rm -rf device/xiaomi/camellia-kernel
@@ -42,9 +41,15 @@ echo "---------------------------------"
 echo "Adapting Device Tree for PixelOS"
 echo "---------------------------------"
 if [ -f device/xiaomi/camellia/lineage_camellia.mk ]; then
-  mv device/xiaomi/camellia/lineage_camellia.mk device/xiaomi/camellia/pixelos_camellia.mk
-  sed -i 's/lineage_camellia/pixelos_camellia/g' device/xiaomi/camellia/AndroidProducts.mk
-  sed -i 's/lineage_camellia/pixelos_camellia/g' device/xiaomi/camellia/pixelos_camellia.mk
+    mv device/xiaomi/camellia/lineage_camellia.mk device/xiaomi/camellia/pixelos_camellia.mk
+    
+    # Update daftar produk di AndroidProducts.mk
+    sed -i 's/lineage_camellia/pixelos_camellia/g' device/xiaomi/camellia/AndroidProducts.mk
+    
+    # Update PRODUCT_NAME & konfigurasi bawaan di pixelos_camellia.mk
+    sed -i 's/lineage_camellia/pixelos_camellia/g' device/xiaomi/camellia/pixelos_camellia.mk
+    sed -i 's/vendor\/lineage/vendor\/pixelos/g' device/xiaomi/camellia/pixelos_camellia.mk
+    sed -i 's/lineage_/pixelos_/g' device/xiaomi/camellia/pixelos_camellia.mk
 fi
 
 echo "---------------------"
@@ -62,10 +67,10 @@ echo "----------------------------"
 echo "Starting PixelOS Compilation"
 echo "----------------------------"
 
-# Format lunch baru: <product>-<release>-<build_variant>
+# Menjalankan lunch khusus PixelOS Android 16 / Trunk Staging
 lunch pixelos_camellia-ap3a-userdebug || lunch pixelos_camellia-trunk_staging-userdebug
 
-m bacon
+m bacon -j$(nproc)
 
 echo "----------"
 echo "Build Done"

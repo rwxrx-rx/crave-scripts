@@ -50,9 +50,19 @@ if [ -f device/xiaomi/camellia/lineage_camellia.mk ]; then
     # 3. Ganti PRODUCT_NAME
     sed -i 's/PRODUCT_NAME := lineage_camellia/PRODUCT_NAME := pixelos_camellia/g' device/xiaomi/camellia/pixelos_camellia.mk
     
-    # 4. Ganti Inherit Vendor Config (PixelOS AOSP menggunakan vendor/pixel/config/...)
-    sed -i 's|vendor/lineage/config/common_full_phone.mk|vendor/pixel/config/common_full_phone.mk|g' device/xiaomi/camellia/pixelos_camellia.mk
-    sed -i 's|vendor/lineage/config/common.mk|vendor/pixel/config/common.mk|g' device/xiaomi/camellia/pixelos_camellia.mk
+    # 4. Hapus baris inherit Lineage yang lama
+    sed -i '/vendor\/lineage/d' device/xiaomi/camellia/pixelos_camellia.mk
+    
+    # 5. Cari file config vendor PixelOS yang valid secara otomatis di folder vendor/
+    PIXEL_VENDOR_MK=$(find vendor/pixel* vendor/aosp* -type f \( -name "common.mk" -o -name "common_full.mk" -o -name "common_full_phone.mk" -o -name "config.mk" \) 2>/dev/null | head -n 1)
+
+    if [ -n "$PIXEL_VENDOR_MK" ]; then
+        echo "--> Found PixelOS Vendor Config: $PIXEL_VENDOR_MK"
+        echo "\$(call inherit-product, $PIXEL_VENDOR_MK)" >> device/xiaomi/camellia/pixelos_camellia.mk
+    else
+        echo "--> WARNING: Vendor config not found automatically, falling back to vendor/pixelos/config/common.mk"
+        echo '$(call inherit-product, vendor/pixelos/config/common.mk)' >> device/xiaomi/camellia/pixelos_camellia.mk
+    fi
 fi
 
 echo "---------------------"
@@ -70,8 +80,8 @@ echo "----------------------------"
 echo "Starting PixelOS Compilation"
 echo "----------------------------"
 
-# Android 16 / PixelOS Sixteen menggunakan penamaan lunch modern:
-lunch pixelos_camellia-ap3a-userdebug || lunch pixelos_camellia-userdebug
+# Pilihan target lunch untuk Android 16 / PixelOS Sixteen
+lunch pixelos_camellia-ap3a-userdebug || lunch pixelos_camellia-trunk_staging-userdebug || lunch pixelos_camellia-userdebug
 
 m bacon -j$(nproc)
 

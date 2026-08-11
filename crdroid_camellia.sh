@@ -4,7 +4,7 @@
 echo "-----------------------------"
 echo "Starting Repo Init"
 echo "-----------------------------"
-repo init -u https://github.com/crdroidandroid/android.git -b 16.0 --git-lfs --no-clone-bundle
+repo init -u https://github.com/crdroidandroid/android.git -b 16.0 --git-lfs --no-clone-bundle --depth=1
 
 # 2. Syncing Source (Cukup 1x)
 echo "-----------------------"
@@ -28,9 +28,9 @@ rm -rf device/mediatek/sepolicy_vndr
 rm -rf hardware/mediatek
 rm -rf hardware/xiaomi
 
-git clone https://github.com/aLpHa-Git-69/device_xiaomi_camellia.git -b lineage-23.2 device/xiaomi/camellia
+git clone https://github.com/cristidclxvi/android_device_xiaomi_camellia.git -b lineage-23.2 device/xiaomi/camellia
 git clone https://github.com/aLpHa-Git-69/vendor_xiaomi_camellia.git vendor/xiaomi/camellia
-git clone https://github.com/dm700-devs/device_xiaomi_camellia-kernel.git device/xiaomi/camellia-kernel
+git clone https://github.com/cristidclxvi/android_kernel_xiaomi_camellia.git device/xiaomi/camellia-kernel
 git clone https://github.com/techyminati/android_vendor_mediatek_ims.git vendor/mediatek/ims
 git clone https://github.com/LineageOS/android_device_mediatek_sepolicy_vndr.git device/mediatek/sepolicy_vndr
 git clone https://github.com/LineageOS/android_hardware_mediatek.git hardware/mediatek

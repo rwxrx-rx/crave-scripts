@@ -40,6 +40,18 @@ echo "---------------------"
 echo "Trees clone completed"
 echo "---------------------"
 
+# 3.5. Patching Vendor Conflict
+echo "-----------------------------------"
+echo "Patching Namespace Collision Errors"
+echo "-----------------------------------"
+# Mencegah bentrok modul "chipinfo" antara vendor dan hardware/mediatek
+if [ -f "vendor/xiaomi/camellia/Android.bp" ]; then
+    sed -i 's/name: "chipinfo",/name: "chipinfo_vendor",/g' vendor/xiaomi/camellia/Android.bp
+    echo "Patch applied to vendor chipinfo!"
+else
+    echo "Warning: vendor/xiaomi/camellia/Android.bp not found, skipping patch."
+fi
+
 # 4. Setup Environment
 echo "---------------------------"
 echo "Setting up Build Environment"

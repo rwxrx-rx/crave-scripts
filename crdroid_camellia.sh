@@ -58,6 +58,25 @@ echo "Setting up Build Environment"
 echo "---------------------------"
 source build/envsetup.sh
 
+# 4.5. Bypass Prebuilt Kernel (FIX NINJA ERROR)
+echo "-----------------------------------"
+echo "Preparing Prebuilt Kernel for Ninja"
+echo "-----------------------------------"
+mkdir -p out/target/product/camellia/
+
+# Mengecek dan menyalin file kernel dari repo prebuilt agar Ninja tidak error
+if [ -f "device/xiaomi/camellia-kernel/kernel" ]; then
+    cp device/xiaomi/camellia-kernel/kernel out/target/product/camellia/kernel
+    echo "=> Success: Copied 'kernel' to out/ directory."
+elif [ -f "device/xiaomi/camellia-kernel/Image.gz-dtb" ]; then
+    cp device/xiaomi/camellia-kernel/Image.gz-dtb out/target/product/camellia/kernel
+    echo "=> Success: Copied 'Image.gz-dtb' to out/ directory as 'kernel'."
+else
+    echo "=> WARNING: Prebuilt kernel not found in device/xiaomi/camellia-kernel!"
+    echo "=> Creating dummy file to bypass Ninja error. (You must flash kernel separately later)"
+    touch out/target/product/camellia/kernel
+fi
+
 # 5. Build ROM (Sesuai Device: camellia)
 echo "----------"
 echo "Starting Brunch Camellia"

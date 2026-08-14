@@ -79,10 +79,17 @@ echo "-> [5/6] Starting Build Process..."
 export BUILD_USERNAME="rwxrx-rx"
 export BUILD_HOSTNAME="crave-cloud"
 
+# Hapus file Android.mk terlarang di prebuilts clang yang memicu blokir build system
+if [ -f "prebuilts/clang/host/linux-x86-r383902/Android.mk" ]; then
+    echo "=> Menghapus file Android.mk yang diblokir oleh build system..."
+    rm -f prebuilts/clang/host/linux-x86-r383902/Android.mk
+fi
+
 source build/envsetup.sh
 
-# Jalankan brunch. Jika berhasil (exit code 0), lanjut ke blok 'then'. Jika gagal, masuk ke 'else'
-if brunch camellia; then
+# Menggunakan perintah lunch manual agar lebih spesifik dibanding brunch
+lunch lineage_camellia-bp4a-userdebug
+if mka bacon; then
     
     # 6. Proses Auto-Upload ke Pixeldrain
     echo "-> [6/6] Build Success! Searching for ZIP..."

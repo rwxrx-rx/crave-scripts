@@ -1,19 +1,16 @@
 #!/bin/bash
 
 # =================================================
-#  Konfigurasi Notifikasi Telegram & Upload
+#  Konfigurasi Notifikasi Telegram & Upload Pixeldrain
 # =================================================
-# Mengambil token dan chat ID dari argumen eksekusi GitHub Actions
 TG_TOKEN="$1"
 TG_CHAT_ID="$2"
 
-# Validasi keamanan: Pastikan token diisi, jika kosong batalkan eksekusi
-if [ -z "$TG_TOKEN" ] || [ -z "$TG_CHAT_ID" ]; then
+if [ -z "$TG_TOKEN" ] \vert{}\vert{} [ -z "$TG_CHAT_ID" ]; then
     echo "=> ERROR: TG_TOKEN atau TG_CHAT_ID kosong! Pastikan GitHub Secrets sudah dikirim."
     exit 1
 fi
 
-# Fungsi untuk mengirim pesan ke Telegram (format HTML)
 function send_tg() {
     curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
         -d "chat_id=${TG_CHAT_ID}" \
@@ -21,8 +18,6 @@ function send_tg() {
         -d "disable_web_page_preview=true" \
         -d "text=$1" > /dev/null
 }
-
-# ... (lanjutkan dengan sisa skrip repo init, sync, dan build di bawahnya tanpa perubahan) ...
 
 echo "================================================="
 echo "      crDroid (Android 16) Crave Build Script    "
@@ -32,11 +27,11 @@ echo "================================================="
 send_tg "🚀 <b>[CRAVE CI/CD] Build Started!</b>%0A%0A📱 <b>Device:</b> camellia%0A🤖 <b>ROM:</b> crDroid (Android 16)%0A👨‍💻 <b>Builder:</b> @rwxrx-rx"
 
 # 1. Inisialisasi Repositori
-echo "-> [1/7] Initializing crDroid Repo..."
+echo "-> [1/6] Initializing crDroid Repo..."
 repo init -u https://github.com/crdroidandroid/android.git -b 16.0 --git-lfs --depth=1
 
 # 2. Injeksi Local Manifest
-echo "-> [2/7] Injecting Local Manifest..."
+echo "-> [2/6] Injecting Local Manifest..."
 mkdir -p .repo/local_manifests
 rm -rf .repo/local_manifests/camellia_manifest.xml
 
@@ -54,24 +49,33 @@ cat << 'EOF' > .repo/local_manifests/camellia_manifest.xml
 </manifest>
 EOF
 
-# 3. Sinkronisasi Source
-echo "-> [3/7] Syncing Source & Device Trees..."
+# 3. Clean & Pembersihan Direktori Lama sebelum Sinkronisasi
+echo "-------------------------------------------------"
+echo "-> [3/6] Cleaning up old directories..."
+echo "-------------------------------------------------"
+rm -rf device/xiaomi/camellia
+rm -rf vendor/xiaomi/camellia
+rm -rf kernel/xiaomi/camellia
+rm -rf kernel/xiaomi/vendor
+rm -rf vendor/mediatek/ims
+rm -rf device/mediatek/sepolicy_vndr
+rm -rf hardware/mediatek
+rm -rf hardware/xiaomi
+
+# Sinkronisasi Source & Manifest
+echo "-------------------------------------------------"
+echo "-> Syncing Source & Local Manifest Trees..."
+echo "-------------------------------------------------"
 /opt/crave/resync.sh
 
-# 4. Clone Vendor Tree
-echo "-> [4/7] Setting up Proprietary Vendor Blobs..."
-if [ ! -d "vendor/xiaomi/camellia" ]; then
-    git clone https://github.com/aLpHa-Git-69/vendor_xiaomi_camellia.git vendor/xiaomi/camellia
-fi
-
-# 5. Patch Konflik Namespace
-echo "-> [5/7] Applying necessary patches..."
+# 4. Patch Konflik Namespace (Jika diperlukan oleh vendor/device tree cristidclxvi)
+echo "-> [4/6] Applying necessary patches..."
 if [ -f "vendor/xiaomi/camellia/Android.bp" ]; then
     sed -i 's/name: "chipinfo",/name: "chipinfo_vendor",/g' vendor/xiaomi/camellia/Android.bp
 fi
 
-# 6. Mulai Kompilasi ROM
-echo "-> [6/7] Starting Build Process..."
+# 5. Mulai Kompilasi ROM
+echo "-> [5/6] Starting Build Process..."
 export BUILD_USERNAME="rwxrx-rx"
 export BUILD_HOSTNAME="crave-cloud"
 
@@ -80,11 +84,10 @@ source build/envsetup.sh
 # Jalankan brunch. Jika berhasil (exit code 0), lanjut ke blok 'then'. Jika gagal, masuk ke 'else'
 if brunch camellia; then
     
-    # 7. Proses Auto-Upload
-    echo "-> [7/7] Build Success! Searching for ZIP..."
+    # 6. Proses Auto-Upload ke Pixeldrain
+    echo "-> [6/6] Build Success! Searching for ZIP..."
     
-    # Mencari file zip hasil build (biasanya berawalan crDroid- dan berakhiran .zip, mengabaikan file ota/target_files)
-    ROM_ZIP=$(find out/target/product/camellia/ -maxdepth 1 -name "crDroid-*.zip" -type f | head -n 1)
+    ROM_ZIP=$(find out/target/product/camellia/ -maxdepth 1 -name "crDroidAndroid-*.zip" -type f | head -n 1)
     
     if [ -f "$ROM_ZIP" ]; then
         ZIP_NAME=$(basename "$ROM_ZIP")
@@ -92,14 +95,10 @@ if brunch camellia; then
         
         echo "=> Mengunggah ${ZIP_NAME} ke Pixeldrain..."
         
-        # Eksekusi upload dan tangkap response JSON-nya
         UPLOAD_RESP=$(curl -s -T "$ROM_ZIP" https://pixeldrain.com/api/file/)
-        
-        # Ekstrak ID file dari response JSON menggunakan grep regex
         FILE_ID=$(echo "$UPLOAD_RESP" | grep -oP '"id":"\K[^"]+')
         
         if [ ! -z "$FILE_ID" ]; then
-            # Jika ID didapatkan, buat link donwload
             DOWNLOAD_LINK="https://pixeldrain.com/u/${FILE_ID}"
             echo "=> Upload Sukses: $DOWNLOAD_LINK"
             send_tg "🎉 <b>Upload Sukses!</b>%0A%0A📥 <b>Link Download:</b>%0A<a href='${DOWNLOAD_LINK}'>${DOWNLOAD_LINK}</a>"
@@ -113,7 +112,6 @@ if brunch camellia; then
     fi
 
 else
-    # Jika perintah `brunch camellia` gagal (error Ninja, C++, RAM, dsb)
     echo "=> BUILD GAGAL!"
-    send_tg "❌ <b>[CRAVE CI/CD] Build GAGAL!</b>%0A%0ATerjadi error saat kompilasi. Silakan cek log Crave via SSH atau terminal."
+    send_tg "❌ <b>[CRAVE CI/CD] Build GAGAL!</b>%0A%0ATerjadi error saat kompilasi. Silakan cek log Crave via terminal."
 fi

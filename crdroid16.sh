@@ -6,7 +6,7 @@
 TG_TOKEN="$1"
 TG_CHAT_ID="$2"
 
-if [ -z "$TG_TOKEN" ] \vert{}\vert{} [ -z "$TG_CHAT_ID" ]; then
+if [ -z "$TG_TOKEN" ] || [ -z "$TG_CHAT_ID" ]; then
     echo "=> ERROR: TG_TOKEN atau TG_CHAT_ID kosong! Pastikan GitHub Secrets sudah dikirim."
     exit 1
 fi
@@ -38,14 +38,27 @@ rm -rf .repo/local_manifests/camellia_manifest.xml
 cat << 'EOF' > .repo/local_manifests/camellia_manifest.xml
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
-  <project name="cristidclxvi/android_device_xiaomi_camellia" path="device/xiaomi/camellia" remote="github" revision="lineage-23.2" />
-  <project name="cristidclxvi/android_kernel_xiaomi_camellia" path="kernel/xiaomi/camellia" remote="github" revision="lineage-23.2" />
-  <project name="cristidclxvi/android_kernel_modules_xiaomi_camellia" path="kernel/xiaomi/vendor" remote="github" revision="lineage-23.2" />
-  <project name="LineageOS/android_device_mediatek_sepolicy_vndr" path="device/mediatek/sepolicy_vndr" remote="github" />
-  <project name="LineageOS/android_hardware_mediatek" path="hardware/mediatek" remote="github" />
-  <project name="LineageOS/android_hardware_xiaomi" path="hardware/xiaomi" remote="github" />
-  <project name="cristidclxvi/android_vendor_mediatek_ims" path="vendor/mediatek/ims" remote="github" revision="32a265afc6a297b20e8c8a4c870133de0e188884" />
-  <project name="platform/prebuilts/clang/host/linux-x86" path="prebuilts/clang/host/linux-x86-r383902" remote="aosp" revision="refs/tags/android-12.1.0_r27" clone-depth="1" />
+  <project name="cristidclxvi/android_device_xiaomi_camellia"
+           path="device/xiaomi/camellia" remote="github" revision="lineage-23.2" />
+  <project name="dm700-devs/device_xiaomi_camellia-kernel"
+           path="kernel/xiaomi/camellia-kernel" remote="github" revision="lineage-23.2" />
+  <project name="cristidclxvi/android_kernel_modules_xiaomi_camellia"
+           path="kernel/xiaomi/vendor" remote="github" revision="lineage-23.2" />
+  <project name="LineageOS/android_device_mediatek_sepolicy_vndr"
+           path="device/mediatek/sepolicy_vndr" remote="github" />
+  <project name="LineageOS/android_hardware_mediatek"
+           path="hardware/mediatek" remote="github" />
+  <project name="LineageOS/android_hardware_xiaomi"
+           path="hardware/xiaomi" remote="github" />
+
+  <project name="cristidclxvi/android_vendor_mediatek_ims"
+           path="vendor/mediatek/ims" remote="github"
+           revision="32a265afc6a297b20e8c8a4c870133de0e188884" />
+
+  <project name="platform/prebuilts/clang/host/linux-x86"
+           path="prebuilts/clang/host/linux-x86-r383902"
+           remote="aosp" revision="refs/tags/android-12.1.0_r27"
+           clone-depth="1" />
 </manifest>
 EOF
 
@@ -68,7 +81,7 @@ echo "-> Syncing Source & Local Manifest Trees..."
 echo "-------------------------------------------------"
 /opt/crave/resync.sh
 
-# 4. Patch Konflik Namespace (Jika diperlukan oleh vendor/device tree cristidclxvi)
+# 4. Patch Konflik Namespace
 echo "-> [4/6] Applying necessary patches..."
 if [ -f "vendor/xiaomi/camellia/Android.bp" ]; then
     sed -i 's/name: "chipinfo",/name: "chipinfo_vendor",/g' vendor/xiaomi/camellia/Android.bp
@@ -87,7 +100,6 @@ fi
 
 source build/envsetup.sh
 
-# Menggunakan perintah lunch manual agar lebih spesifik dibanding brunch
 lunch lineage_camellia-bp4a-userdebug
 if mka bacon; then
     

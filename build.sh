@@ -87,10 +87,7 @@ echo "======================"
 # ==============================================================================
 # 7. Selection Target Lunch crDroid Camellia
 # ==============================================================================
-lunch crdroid_camellia-ap4a-userdebug || lunch crdroid_camellia-userdebug || lunch crdroid_camellia-user
-
-# Bersihkan sisa kompilasi target ringan
-make installclean
+brunch camellia
 
 send_telegram "⚙️ <b>Sync & Setup Completed. Starting Compilation...</b>"
 

@@ -17,14 +17,15 @@ mkdir -p .repo/local_manifests
 
 cat > .repo/local_manifests/camellia.xml << 'EOF'
 <manifest>
-  <!-- Device, Kernel, & Modules -->
+  <!-- Device & Kernel -->
   <project name="cristidclxvi/android_device_xiaomi_camellia" path="device/xiaomi/camellia" remote="github" revision="lineage-23.2" />
   <project name="cristidclxvi/android_kernel_xiaomi_camellia" path="kernel/xiaomi/camellia" remote="github" revision="lineage-23.2" />
+  
+  <!-- Kernel Modules -->
   <project name="cristidclxvi/android_kernel_modules_xiaomi_camellia" path="kernel/xiaomi/vendor" remote="github" revision="lineage-23.2" />
   
-  <!-- Vendor Blobs Pribadi -->
-  <!-- PERHATIAN: Pastikan repo vendor ini publik agar tidak gagal clone lagi -->
-  <project name="cristidclxvi/android_vendor_xiaomi_camellia" path="vendor/xiaomi/camellia" remote="github" revision="lineage-23.2" />
+  <!-- Vendor Blobs (Menggunakan repositori kernel modules sesuai permintaan) -->
+  <project name="cristidclxvi/android_kernel_modules_xiaomi_camellia" path="vendor/xiaomi/camellia" remote="github" revision="android-16-camellia" />
 
   <!-- Dependensi Hardware & IMS MediaTek -->
   <project name="LineageOS/android_device_mediatek_sepolicy_vndr" path="device/mediatek/sepolicy_vndr" remote="github" />

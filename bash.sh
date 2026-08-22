@@ -23,6 +23,7 @@ cat > .repo/local_manifests/camellia.xml << 'EOF'
   <project name="cristidclxvi/android_kernel_modules_xiaomi_camellia" path="kernel/xiaomi/vendor" remote="github" revision="lineage-23.2" />
   
   <!-- Vendor Blobs Pribadi -->
+  <!-- PERHATIAN: Pastikan repo vendor ini publik agar tidak gagal clone lagi -->
   <project name="cristidclxvi/android_vendor_xiaomi_camellia" path="vendor/xiaomi/camellia" remote="github" revision="lineage-23.2" />
 
   <!-- Dependensi Hardware & IMS MediaTek -->
@@ -46,34 +47,45 @@ repo init -u https://github.com/crdroidandroid/android.git -b "$BRANCH" --git-lf
 echo "======================================"
 echo " 3. Memperbaiki Kompatibilitas Tree"
 echo "======================================"
-# A. Menghapus blocker kompilasi Clang (Error pada log sebelumnya)
+# A. Menghapus blocker kompilasi Clang
 rm -f prebuilts/clang/host/linux-x86-r383902/Android.mk
 
 # B. Konversi Tree dari LineageOS menjadi standar crDroid
 echo "Mengonversi Makefiles lineage_camellia ke crdroid_camellia..."
-cd device/xiaomi/camellia || exit 1
 
-# Rename file utama mk
-if [ -f lineage_camellia.mk ]; then
-    mv lineage_camellia.mk crdroid_camellia.mk
+# Memastikan device tree berhasil di-clone sebelum diubah
+if [ -d "device/xiaomi/camellia" ]; then
+    cd device/xiaomi/camellia || exit 1
+
+    # Rename file utama mk
+    if [ -f lineage_camellia.mk ]; then
+        mv lineage_camellia.mk crdroid_camellia.mk
+    fi
+
+    # Ubah secara massal seluruh referensi "lineage_camellia" menjadi "crdroid_camellia" di semua file .mk dan .sh
+    find . -type f -name "*.mk" -exec sed -i 's/lineage_camellia/crdroid_camellia/g' {} +
+    find . -type f -name "*.sh" -exec sed -i 's/lineage_camellia/crdroid_camellia/g' {} +
+
+    # Ubah path pewarisan (inherit) vendor config spesifik untuk crDroid
+    sed -i 's/vendor\/lineage\/config\/common_full_phone.mk/vendor\/crdroid\/config\/common.mk/g' crdroid_camellia.mk
+    sed -i 's/vendor\/lineage\/config\/common.mk/vendor\/crdroid\/config\/common.mk/g' crdroid_camellia.mk
+
+    # Pastikan nama produk di AndroidProducts.mk benar
+    if [ -f AndroidProducts.mk ]; then
+        sed -i 's/lineage_/crdroid_/g' AndroidProducts.mk
+    fi
+
+    # Kembali ke root
+    cd ../../..
+else
+    echo "Peringatan: Direktori device/xiaomi/camellia tidak ditemukan. Cek log sinkronisasi repo."
 fi
-
-# Edit isi file mk agar mewarisi konfigurasi crDroid (bukan Lineage)
-sed -i 's/lineage_camellia/crdroid_camellia/g' crdroid_camellia.mk
-sed -i 's/vendor\/lineage\/config\/common_full_phone.mk/vendor\/crdroid\/config\/common.mk/g' crdroid_camellia.mk
-sed -i 's/vendor\/lineage\/config\/common.mk/vendor\/crdroid\/config\/common.mk/g' crdroid_camellia.mk
-
-# Pastikan nama produk di AndroidProducts.mk juga berubah
-if [ -f AndroidProducts.mk ]; then
-    sed -i 's/lineage_camellia/crdroid_camellia/g' AndroidProducts.mk
-fi
-
-# Kembali ke root
-cd ../../..
 
 echo "======================================"
 echo " 4. Build Sesuai Panduan README.mkdn"
 echo "======================================"
+# Mencegah roomservice mencari repo ke official github crdroid yang tidak ada
+export ROOMSERVICE_DISABLE=true
 export ALLOW_MISSING_DEPENDENCIES=true
 
 # 1. Source environment sesuai README
